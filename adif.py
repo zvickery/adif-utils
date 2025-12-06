@@ -2,6 +2,7 @@
 import sys
 import re
 import gridsquare
+import pytz
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -112,7 +113,7 @@ def summarize(path, callsign=None, home_grid=None):
                 w(f"  {country} - {state_label} - {cnty}")
 
     # Per-band maps
-    report_time = datetime.now().strftime('%Y-%m-%dT%H:%M:%S%z')
+    report_time = datetime.now(pytz.utc).strftime('%Y-%m-%dT%H:%M:%S%z')
     if grid4_by_band:
         for band in sorted(grid4_by_band.keys()):
             label = f"QSLed grid squares for {callsign.upper()} on {band} as of {report_time}" if callsign else f"QSLed grid squares on {band} as of {report_time}"
