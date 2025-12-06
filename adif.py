@@ -37,11 +37,16 @@ def load_state_totals():
         "UNITED STATES OF AMERICA": 49,
     }
 
-def summarize(path):
+def summarize(path, callsign=None, home_grid=None):
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
         content = f.read()
 
-    print("Report generated:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    # collect report lines and write once at the end to dx-report.txt (overwrite)
+    out_lines = []
+    def w(line=""):
+        out_lines.append(line + "\n")
+
+    w(f"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     country_counts = Counter()
     states_by_country = defaultdict(set)
@@ -75,13 +80,14 @@ def summarize(path):
                 band_key = band.strip().upper() if band and band.strip() else '(no BAND)'
                 grid4_by_band[band_key][g4] += 1
 
-    # Output
+    # Output to buffer
     total_countries = len(country_counts)
-    print(f"Country counts {total_countries}:")
+    w(f"Countries ({total_countries}/340)")
     for country, cnt in country_counts.most_common():
-        print(f"  {country}: {cnt}")
+        w(f"  {country}: {cnt}")
 
-    print("\nStates by country:")
+    w("")
+    w("States by country:")
     # Print one country/state combination per line. Include countries with no states.
     all_countries = set(states_by_country.keys()) | set(country_counts.keys())
 
@@ -91,32 +97,47 @@ def summarize(path):
         present = len(states)
         total = state_totals.get(country.upper())
         if states and total is not None and total != 0:
-            print(f"  {country}: {present}/{total}")
+            w(f"  {country}: {present}/{total}")
             if states:
                 for state in states:
-                    print(f"    - {state}")
+                    w(f"    - {state}")
 
-    print("\nCounties by country -> state:")
+    w("")
+    w("Counties by country -> state:")
     # Print one country/state/cnty combination per line.
     for country in sorted(cnty_by_country_state):
         for state in sorted(cnty_by_country_state[country]):
             state_label = state if state else '(no STATE)'
             for cnty in sorted(cnty_by_country_state[country][state]):
-                print(f"  {country} - {state_label} - {cnty}")
+                w(f"  {country} - {state_label} - {cnty}")
 
     # Per-band maps
+    report_time = datetime.now().strftime('%Y-%m-%dT%H:%M:%S%z')
     if grid4_by_band:
         for band in sorted(grid4_by_band.keys()):
-            gridsquare.render_from_counts(grid4_by_band[band], output_path=f"world_equal_{band}.png", highlight_locator="DN13")
+            label = f"QSLed grid squares for {callsign.upper()} on {band} as of {report_time}" if callsign else f"QSLed grid squares on {band} as of {report_time}"
+            gridsquare.render_from_counts(grid4_by_band[band], output_path=f"{callsign}_map_{band}.png", highlight_locator=home_grid, label=label)
 
-    gridsquare.render_from_counts(grid4_counts, output_path="world_equal_all.png", highlight_locator="DN13")
+    label_all = f"QSLed grid squares for {callsign.upper()} on all bands as of {report_time}" if callsign else f"QSLed grid squares on all bands as of {report_time}"
+    gridsquare.render_from_counts(grid4_counts, output_path=f"{callsign}_map_all.png", highlight_locator=home_grid, label=label_all)
 
+    # write report to dx-report.txt (overwrite)
+    try:
+        with open("dx-report.txt", "w", encoding="utf-8") as repf:
+            repf.writelines(out_lines)
+        print(f"Wrote dx-report.txt")
+    except Exception as e:
+        # If writing the file fails, fallback to printing the error to stdout
+        print(f"Error writing dx-report.txt: {e}")
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 parse_adif.py path/to/file.adi")
+    if len(sys.argv) != 4:
+        print("Usage: python3 adif.py path/to/file.adi [CALLSIGN] [HOME_GRID]")
         sys.exit(2)
-    summarize(sys.argv[1])
+    path = sys.argv[1]
+    callsign = sys.argv[2]
+    home_grid = sys.argv[3]
+    summarize(path, callsign=callsign.lower(), home_grid=home_grid.upper())
 
 if __name__ == "__main__":
     main()

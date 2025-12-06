@@ -52,17 +52,9 @@ def add_maidenhead_grid(ax, lon_step=2, lat_step=1, line_kwargs=None):
         ax.plot(lons, [lat] * lons.size, transform=ccrs.PlateCarree(), **line_kwargs)
         
 
-def plot_world_equal_area(output_path="world_equal_area.png", dpi=300, highlight_locator="DN13", green_locators=None):
-    """
-    Create a world map using an Azimuthal Equidistant projection and save to output_path.
-    If draw_maidenhead is True, draw 4-character Maidenhead grid square boundaries (2° x 1°).
-    If highlight_locator is provided, center the azimuthal equidistant projection on that locator
-    and fill that 4-char square in red.
-    green_locators: iterable of 4-char Maidenhead locators to fill (highlighter yellow by convention).
-                   Default: ["PM95", "DM13", "FM99"]
-    """
-    if green_locators is None:
-        green_locators = ["PM95", "DM13", "FM99"]
+def plot_world(output_path, highlight_locator, filled_locators=None, label="", dpi=300):
+    if filled_locators is None:
+        filled_locators = ["PM95", "DM13", "FM99"]
 
     proj = ccrs.Mollweide()
     fig = plt.figure(figsize=(12, 6))
@@ -81,7 +73,7 @@ def plot_world_equal_area(output_path="world_equal_area.png", dpi=300, highlight
     add_maidenhead_grid(ax)
 
     # fill provided locators (highlighter yellow)
-    for loc in green_locators:
+    for loc in filled_locators:
         if not loc:
             continue
         try:
@@ -104,23 +96,26 @@ def plot_world_equal_area(output_path="world_equal_area.png", dpi=300, highlight
         except Exception:
             pass
 
+    # add label text at the bottom center of the figure
+    fig.text(0.9, 0.01, label, ha='right', va='bottom', fontsize=9, color='black')
+
     plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved equal-area world map to: {output_path}")
+    print(f"Saved map to: {output_path}")
 
-def render_from_counts(grid4_counts, output_path="world_equal_area.png", highlight_locator=None):
+def render_from_counts(grid4_counts, output_path, highlight_locator=None, label=""):
     """
     Convenience wrapper to render a map using the keys of grid4_counts as the locators to highlight.
     grid4_counts: mapping-like with 4-char grid square keys (e.g. dict or Counter).
     """
     if grid4_counts is None:
-        green_locators = None
+        filled_locators = None
     else:
         # ensure stable ordering
-        green_locators = list(grid4_counts.keys())
-    plot_world_equal_area(output_path=output_path, dpi=300,
-                          highlight_locator=highlight_locator, green_locators=green_locators)
+        filled_locators = list(grid4_counts.keys())
+    plot_world(output_path=output_path, highlight_locator=highlight_locator,
+               filled_locators=filled_locators, label=label)
 
 if __name__ == "__main__":
     # keep the previous default behaviour when run directly
-    plot_world_equal_area()
+    plot_world()
