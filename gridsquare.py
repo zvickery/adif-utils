@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
