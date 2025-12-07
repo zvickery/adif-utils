@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-import sys
+"""Generate DX report and maps from an ADIF file."""
+
 import re
-import gridsquare
-import pytz
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 
+import pytz
+
+import gridsquare
+
+
 def parse_adif(content):
+    """Yield records as dicts from ADIF content."""
     # Split header/body at <EOH>
     parts = re.split(r'(?i)<\s*eoh\s*>', content, maxsplit=1)
     body = parts[1] if len(parts) > 1 else parts[0]
@@ -14,7 +20,9 @@ def parse_adif(content):
     # Split records by <EOR>
     records = [r for r in re.split(r'(?i)<\s*eor\s*>', body) if r.strip()]
 
-    tag_re = re.compile(r'(?i)<\s*([^:\s>]+)(?:\s*:\s*\d+)?[^>]*>([^<]*)')
+    tag_re = re.compile(
+        r'(?i)<\s*([^:\s>]+)(?:\s*:\s*\d+)?[^>]*>([^<]*)'
+    )
 
     for rec in records:
         fields = {}
@@ -25,8 +33,9 @@ def parse_adif(content):
             fields[tag] = val
         yield fields
 
+
 def load_state_totals():
-    # Reference: https://adif.org/316/ADIF_316.htm
+    """Return small mapping of country -> total number of states (per ADIF III.B.12)."""
     return {
         "ASIATIC RUSSIA": 32,
         "AUSTRALIA": 8,
@@ -38,29 +47,34 @@ def load_state_totals():
         "UNITED STATES OF AMERICA": 49,
     }
 
+
 def summarize(path, callsign=None, home_grid=None):
-    with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        content = f.read()
+    """Parse ADIF file at path and write a DX report and per-band maps."""
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        content = fh.read()
 
     # collect report lines and write once at the end to dx-report.txt (overwrite)
     out_lines = []
+
     def w(line=""):
         out_lines.append(line + "\n")
 
-    w(f"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    w(
+        f"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     country_counts = Counter()
     states_by_country = defaultdict(set)
     cnty_by_country_state = defaultdict(lambda: defaultdict(set))
     grid4_counts = Counter()
-    grid4_by_band = defaultdict(Counter)   # new: track each 4-char grid per band
+    grid4_by_band = defaultdict(Counter)
 
     for fields in parse_adif(content):
-        country = fields.get('COUNTRY') or ''
-        state = fields.get('STATE') or ''
-        cnty = fields.get('CNTY') or ''
-        gridsq = fields.get('GRIDSQUARE') or fields.get('GRID') or ''
-        band = fields.get('BAND') or ''
+        country = fields.get("COUNTRY") or ""
+        state = fields.get("STATE") or ""
+        cnty = fields.get("CNTY") or ""
+        gridsq = fields.get("GRIDSQUARE") or fields.get("GRID") or ""
+        band = fields.get("BAND") or ""
 
         if country:
             country_counts[country] += 1
@@ -71,19 +85,16 @@ def summarize(path, callsign=None, home_grid=None):
             else:
                 # still track CNTY even if STATE missing (group under empty state)
                 if cnty:
-                    cnty_by_country_state[country][''].add(cnty)
+                    cnty_by_country_state[country][""].add(cnty)
 
-        if gridsq:
-            if len(gridsq) >= 4:
-                g4 = gridsq[:4].upper()
-                grid4_counts[g4] += 1
-                # normalize band key for grouping; keep a readable label if missing
-                band_key = band.strip().upper() if band and band.strip() else '(no BAND)'
-                grid4_by_band[band_key][g4] += 1
+        if gridsq and len(gridsq) >= 4:
+            g4 = gridsq[:4].upper()
+            grid4_counts[g4] += 1
+            band_key = band.strip().upper() if band and band.strip() else "(no BAND)"
+            grid4_by_band[band_key][g4] += 1
 
-    # Output to buffer
     total_countries = len(country_counts)
-    w(f"Countries ({total_countries}/340)")
+    w(f"QSLed Countries ({total_countries}/340)")
     for country, cnt in country_counts.most_common():
         w(f"  {country}: {cnt}")
 
@@ -99,46 +110,72 @@ def summarize(path, callsign=None, home_grid=None):
         total = state_totals.get(country.upper())
         if states and total is not None and total != 0:
             w(f"  {country}: {present}/{total}")
-            if states:
-                for state in states:
-                    w(f"    - {state}")
+            for state in states:
+                w(f"    - {state}")
+        else:
+            w(f"  {country}: {present}")
 
     w("")
     w("Counties by country -> state:")
-    # Print one country/state/cnty combination per line.
     for country in sorted(cnty_by_country_state):
         for state in sorted(cnty_by_country_state[country]):
-            state_label = state if state else '(no STATE)'
+            state_label = state if state else "(no STATE)"
             for cnty in sorted(cnty_by_country_state[country][state]):
                 w(f"  {country} - {state_label} - {cnty}")
 
     # Per-band maps
-    report_time = datetime.now(pytz.utc).strftime('%Y-%m-%dT%H:%M:%S%z')
+    report_time = datetime.now(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
     if grid4_by_band:
         for band in sorted(grid4_by_band.keys()):
-            label = f"QSLed grid squares for {callsign.upper()} on {band} as of {report_time}" if callsign else f"QSLed grid squares on {band} as of {report_time}"
-            gridsquare.render_from_counts(grid4_by_band[band], output_path=f"{callsign}_map_{band}.png", highlight_locator=home_grid, label=label)
+            if callsign:
+                label = (
+                    f"QSLed grid squares for {callsign.upper()} on {band} "
+                    f"as of {report_time}"
+                )
+            else:
+                label = f"QSLed grid squares on {band} as of {report_time}"
+            gridsquare.render_from_counts(
+                grid4_by_band[band],
+                output_path=f"{callsign}_map_{band}.png",
+                highlight_locator=home_grid,
+                label=label,
+            )
 
-    label_all = f"QSLed grid squares for {callsign.upper()} on all bands as of {report_time}" if callsign else f"QSLed grid squares on all bands as of {report_time}"
-    gridsquare.render_from_counts(grid4_counts, output_path=f"{callsign}_map_all.png", highlight_locator=home_grid, label=label_all)
+    if callsign:
+        label_all = (
+            f"QSLed grid squares for {callsign.upper()} on all bands "
+            f"as of {report_time}"
+        )
+    else:
+        label_all = f"QSLed grid squares on all bands as of {report_time}"
+
+    gridsquare.render_from_counts(
+        grid4_counts,
+        output_path=f"{callsign}_map_all.png",
+        highlight_locator=home_grid,
+        label=label_all,
+    )
 
     # write report to dx-report.txt (overwrite)
     try:
         with open("dx-report.txt", "w", encoding="utf-8") as repf:
             repf.writelines(out_lines)
-        print(f"Wrote dx-report.txt")
-    except Exception as e:
-        # If writing the file fails, fallback to printing the error to stdout
-        print(f"Error writing dx-report.txt: {e}")
+        print("Wrote dx-report.txt")
+    except Exception as exc:
+        print(f"Error writing dx-report.txt: {exc}")
+
 
 def main():
+    """CLI entrypoint."""
     if len(sys.argv) != 4:
-        print("Usage: python3 adif.py path/to/file.adi [CALLSIGN] [HOME_GRID]")
+        print("Usage: python3 dx-report.py path/to/file.adi [CALLSIGN] [HOME_GRID]")
         sys.exit(2)
+
     path = sys.argv[1]
     callsign = sys.argv[2]
     home_grid = sys.argv[3]
     summarize(path, callsign=callsign.lower(), home_grid=home_grid.upper())
+
 
 if __name__ == "__main__":
     main()
