@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Generate DX report and maps from an ADIF file."""
 
+import gridsquare
+import pytz
 import re
 import sys
+import os
+import json
 from collections import Counter, defaultdict
 from datetime import datetime
-
-import pytz
-
-import gridsquare
 
 
 def parse_adif(content):
@@ -48,6 +48,42 @@ def load_state_totals():
     }
 
 
+# Data file from https://www.iota-world.org/islands-on-the-air/downloads/download-file.html?path=islands.json
+def load_iota_map():
+    """
+    Load an IOTA reference -> name mapping from iota.json (next to this file).
+    Supports either a dict mapping refno->name or a list of objects containing
+    'refno' and 'name' keys. Returned keys are upper-cased strings.
+    """
+    here = os.path.dirname(__file__)
+    path = os.path.join(here, "iota.json")
+    mapping = {}
+    if not os.path.exists(path):
+        return mapping
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return mapping
+
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if k is None:
+                continue
+            mapping[str(k).strip().upper()] = v
+        return mapping
+
+    if isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            ref = item.get("refno") or item.get("RefNo") or item.get("ref") or item.get("id")
+            name = item.get("name") or item.get("Name") or item.get("island")
+            if ref and name:
+                mapping[str(ref).strip().upper()] = name
+    return mapping
+
+
 def summarize(path, callsign=None, home_grid=None):
     """Parse ADIF file at path and write a DX report and per-band maps."""
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -68,6 +104,10 @@ def summarize(path, callsign=None, home_grid=None):
     cnty_by_country_state = defaultdict(lambda: defaultdict(set))
     grid4_counts = Counter()
     grid4_by_band = defaultdict(Counter)
+    iota_values = set()
+
+    # load IOTA mapping once
+    iota_map = load_iota_map()
 
     for fields in parse_adif(content):
         country = fields.get("COUNTRY") or ""
@@ -75,6 +115,7 @@ def summarize(path, callsign=None, home_grid=None):
         cnty = fields.get("CNTY") or ""
         gridsq = fields.get("GRIDSQUARE") or fields.get("GRID") or ""
         band = fields.get("BAND") or ""
+        iota = fields.get("IOTA") or ""
 
         if country:
             country_counts[country] += 1
@@ -93,14 +134,17 @@ def summarize(path, callsign=None, home_grid=None):
             band_key = band.strip().upper() if band and band.strip() else "(no BAND)"
             grid4_by_band[band_key][g4] += 1
 
+        if iota:
+            iota_values.add(iota.strip().upper())
+
     total_countries = len(country_counts)
-    w(f"QSLed Countries ({total_countries}/340)")
-    for country, cnt in country_counts.most_common():
+    w(f"LotW QSLed Countries ({total_countries}/340)")
+    # sort primarily by count (descending), secondarily by country name (ascending)
+    for country, cnt in sorted(country_counts.items(), key=lambda kv: (-kv[1], kv[0])):
         w(f"  {country}: {cnt}")
 
     w("")
-    w("States by country:")
-    # Print one country/state combination per line. Include countries with no states.
+    w("QSLed States (by country):")
     all_countries = set(states_by_country.keys()) | set(country_counts.keys())
 
     state_totals = load_state_totals()
@@ -116,12 +160,39 @@ def summarize(path, callsign=None, home_grid=None):
             w(f"  {country}: {present}")
 
     w("")
-    w("Counties by country -> state:")
+    w("QSLed Counties (by country / state):")
     for country in sorted(cnty_by_country_state):
         for state in sorted(cnty_by_country_state[country]):
             state_label = state if state else "(no STATE)"
             for cnty in sorted(cnty_by_country_state[country][state]):
                 w(f"  {country} - {state_label} - {cnty}")
+
+    w("")
+    w("QSLed IOTA:")
+    if iota_values:
+        for iota in sorted(iota_values):
+            ref = iota.strip().upper()
+            if not ref:
+                continue
+            # exclude undesired placeholder value
+            if ref == "SA-999":
+                continue
+            # direct lookup
+            name = iota_map.get(ref)
+            # try numeric-only form if not found
+            if not name:
+                digits = "".join(ch for ch in ref if ch.isdigit())
+                if digits:
+                    name = iota_map.get(digits) or iota_map.get(str(int(digits)))
+            if not name:
+                # try uppercase lookup (already uppercased above) but keep for robustness
+                name = iota_map.get(ref.upper())
+            if name:
+                w(f"  {ref} -> {name}")
+            else:
+                w(f"  {ref}")
+    else:
+        w("  (none)")
 
     # Per-band maps
     report_time = datetime.now(pytz.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -143,11 +214,11 @@ def summarize(path, callsign=None, home_grid=None):
 
     if callsign:
         label_all = (
-            f"QSLed grid squares for {callsign.upper()} on all bands "
+            f"LotW QSLed grid squares for {callsign.upper()} on all bands "
             f"as of {report_time}"
         )
     else:
-        label_all = f"QSLed grid squares on all bands as of {report_time}"
+        label_all = f"LotW QSLed grid squares on all bands as of {report_time}"
 
     gridsquare.render_from_counts(
         grid4_counts,
