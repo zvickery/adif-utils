@@ -95,7 +95,7 @@ def plot_world(output_path, highlight_locator, filled_locators=None,
         xs = [lon_min, lon_max, lon_max, lon_min]
         ys = [lat_min, lat_min, lat_max, lat_max]
         ax.fill(xs, ys, transform=ccrs.PlateCarree(),
-                facecolor="purple", edgecolor="purple", alpha=0.45,
+                facecolor="green", edgecolor="green", alpha=0.45,
                 zorder=8)
 
     # highlight requested 4-char Maidenhead square in red (drawn on top)
