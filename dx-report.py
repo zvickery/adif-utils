@@ -156,8 +156,6 @@ def summarize(path, callsign=None, home_grid=None):
             w(f"  {country}: {present}/{total}")
             for state in states:
                 w(f"    - {state}")
-        else:
-            w(f"  {country}: {present}")
 
     w("")
     w("QSLed Counties (by country / state):")
@@ -165,6 +163,8 @@ def summarize(path, callsign=None, home_grid=None):
         for state in sorted(cnty_by_country_state[country]):
             state_label = state if state else "(no STATE)"
             for cnty in sorted(cnty_by_country_state[country][state]):
+                if country.strip().upper() == "JAPAN":
+                    continue
                 w(f"  {country} - {state_label} - {cnty}")
 
     w("")
